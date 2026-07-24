@@ -77,6 +77,8 @@ class Listing(Base):
         default="pending",
         nullable=False,
     )
+    injection_detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    guardrail_notes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     seller: Mapped["Seller"] = relationship(back_populates="listings")
@@ -102,6 +104,8 @@ class Review(Base):
         default="pending",
         nullable=False,
     )
+    injection_detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    guardrail_notes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
