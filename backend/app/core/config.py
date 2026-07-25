@@ -12,10 +12,15 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://localhost:6379/0"
 
-    # Unused until Day 3 (agents) — kept here now so config stays
-    # centralized in one place instead of scattered across agent files.
+    # Used from Day 3 onward (agents).
+    # "gemini-flash-latest" is Google's alias that always points to their
+    # current recommended free-tier Flash model — it gets hot-swapped by
+    # Google as they release/deprecate specific versions (this project
+    # originally pinned gemini-2.5-flash directly, which stopped being
+    # available to new API keys within weeks — the alias exists exactly
+    # to avoid that kind of breakage).
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-flash-latest"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
