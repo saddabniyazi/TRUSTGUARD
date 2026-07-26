@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str = "redis://localhost:6379/0"
 
+    # The Next.js dashboard's origin, for CORS. Comma-separated if you
+    # need more than one (e.g. local dev + a deployed preview URL).
+    frontend_origin: str = "http://localhost:3000"
+
     # Used from Day 3 onward (agents).
     # "gemini-flash-latest" is Google's alias that always points to their
     # current recommended free-tier Flash model — it gets hot-swapped by

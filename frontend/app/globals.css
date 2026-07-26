@@ -1,0 +1,73 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+/*
+  Design tokens for the TrustGuard AI moderation console.
+
+  This is an internal operational tool for Trust & Safety analysts
+  triaging a queue all day — not a marketing site. The palette
+  deliberately avoids the two AI-generated-design clusters this brief
+  could easily fall into: warm-cream-serif-terracotta, and
+  near-black-with-acid-green-or-vermilion. Instead: a cool, desaturated
+  blue-gray canvas (instrumentation, not warmth) with a restrained
+  steel-blue interactive accent, and status colors (approve/reject/
+  escalate) kept semantically separate from that accent so they always
+  read as signal, never decoration.
+
+  Three type roles:
+  - Space Grotesk (display): section headers, nav — a technical,
+    slightly geometric character that fits an instrument-panel feel.
+  - Inter (body): everything a human reads at length.
+  - IBM Plex Mono (data): IDs, confidence scores, timestamps — anything
+    a moderator is scanning for precision, not reading for meaning.
+    This distinction is functional, not decorative: an analyst scanning
+    a dense queue benefits from visually separating "computed value"
+    from "prose."
+*/
+
+@theme {
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+
+  --color-void: #0f1216;
+  --color-panel: #171b21;
+  --color-panel-raised: #1d2229;
+  --color-hairline: #2a2f38;
+
+  --color-text-primary: #e4e7eb;
+  --color-text-muted: #8b93a1;
+  --color-text-faint: #565d6b;
+
+  --color-accent: #5b8def;
+  --color-accent-dim: #3d5f9e;
+
+  --color-approve: #3fb968;
+  --color-approve-dim: #1f4a30;
+  --color-reject: #e5484d;
+  --color-reject-dim: #4a2224;
+  --color-escalate: #d9a234;
+  --color-escalate-dim: #4a3a17;
+  --color-pending: #8b93a1;
+}
+
+body {
+  background: var(--color-void);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+}
+
+::selection {
+  background: var(--color-accent-dim);
+  color: var(--color-text-primary);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hairline) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agents import router as agents_router
 from app.api.auth import router as auth_router
+from app.api.feedback import router as feedback_router
 from app.api.listings import router as listings_router
+from app.api.moderation import router as moderation_router
 from app.api.reviews import router as reviews_router
 from app.api.rules import router as rules_router
 from app.api.sellers import router as sellers_router
@@ -41,8 +44,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description="Autonomous multi-agent marketplace moderation copilot.",
-    version="0.2.0",
+    version="0.7.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in settings.frontend_origin.split(",")],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth_router)
@@ -51,6 +62,8 @@ app.include_router(listings_router)
 app.include_router(reviews_router)
 app.include_router(rules_router)
 app.include_router(agents_router)
+app.include_router(moderation_router)
+app.include_router(feedback_router)
 
 
 @app.get("/health", tags=["health"])

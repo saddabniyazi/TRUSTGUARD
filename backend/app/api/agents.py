@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.agents.evaluation_schemas import AgentEvaluationResult
 from app.agents.fraud_agent import run_fraud_agent
 from app.agents.policy_agent import run_policy_agent
+from app.agents.signals import get_reviewer_velocity
 from app.agents.toxicity_agent import run_toxicity_agent
 from app.api.auth import get_current_user
 from app.core.llm_client import AgentCallError
@@ -14,26 +14,6 @@ from app.db.models import Listing, PolicyRule, Review, User
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
-
-
-def _get_reviewer_velocity(db: Session, reviewer_name: str, exclude_review_id: UUID, window_hours: int = 24) -> int:
-    """
-    Real DB signal for the Fraud Agent: how many other reviews has this
-    reviewer_name posted in the last `window_hours`? A crude proxy (no
-    real user accounts yet — Day 8's trust-score system is where this
-    gets attached to actual seller/reviewer identity), but it's a real
-    query against real data, not a number the LLM is asked to guess.
-    """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
-    return (
-        db.query(Review)
-        .filter(
-            Review.reviewer_name == reviewer_name,
-            Review.created_at >= cutoff,
-            Review.id != exclude_review_id,
-        )
-        .count()
-    )
 
 
 @router.post("/evaluate/listing/{listing_id}", response_model=AgentEvaluationResult)
@@ -81,7 +61,7 @@ def evaluate_review(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found")
 
     active_rules = db.query(PolicyRule).filter(PolicyRule.active.is_(True)).all()
-    reviewer_velocity = _get_reviewer_velocity(db, review.reviewer_name, review.id)
+    reviewer_velocity = get_reviewer_velocity(db, review.reviewer_name, review.id)
 
     try:
         policy_verdict = run_policy_agent(review.text, active_rules)
