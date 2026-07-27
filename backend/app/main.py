@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agents import router as agents_router
 from app.api.auth import router as auth_router
+from app.api.eval import router as eval_router
 from app.api.feedback import router as feedback_router
 from app.api.listings import router as listings_router
 from app.api.moderation import router as moderation_router
@@ -44,7 +45,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description="Autonomous multi-agent marketplace moderation copilot.",
-    version="0.7.0",
+    version="0.9.0",
     lifespan=lifespan,
 )
 
@@ -64,6 +65,7 @@ app.include_router(rules_router)
 app.include_router(agents_router)
 app.include_router(moderation_router)
 app.include_router(feedback_router)
+app.include_router(eval_router)
 
 
 @app.get("/health", tags=["health"])

@@ -1,5 +1,7 @@
 import type {
   AggregatorVerdict,
+  AgreementSummary,
+  EvalRun,
   Listing,
   PolicyRule,
   QueueItem,
@@ -238,4 +240,21 @@ export function submitFeedback(
     method: "POST",
     body: JSON.stringify({ verdict_id: verdictId, human_decision: humanDecision, notes }),
   });
+}
+
+// --- Evaluation ---
+
+/** Live metric: how often moderator feedback (Day 6) agreed with the Aggregator's own decision. */
+export function getAgreementSummary(): Promise<AgreementSummary> {
+  return request<AgreementSummary>("/api/eval/agreement");
+}
+
+/** Offline metric: precision/recall from the last full-pipeline run against the adversarial dataset (Day 9's run_full_eval.py). Returns null if no run has been recorded yet, rather than throwing — this is a normal, expected state until someone runs the script. */
+export async function getLatestEvalRun(): Promise<EvalRun | null> {
+  try {
+    return await request<EvalRun>("/api/eval/runs/latest");
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }

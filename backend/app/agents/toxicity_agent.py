@@ -41,4 +41,5 @@ Evaluate the content for toxicity and spam and return your verdict."""
         prompt=prompt,
         response_schema=ToxicityAgentVerdict,
         system_instruction=_SYSTEM_INSTRUCTION,
+        agent_name="toxicity",
     )

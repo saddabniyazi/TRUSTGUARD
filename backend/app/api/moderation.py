@@ -11,11 +11,22 @@ from app.agents.signals import get_reviewer_velocity
 from app.agents.trust import compute_adjusted_thresholds, update_seller_trust
 from app.api.auth import get_current_user
 from app.core.llm_client import AgentCallError
+from app.core.rate_limit import rate_limiter
 from app.db.models import Listing, PolicyRule, Review, Seller, User, Verdict
 from app.db.session import get_db
 from app.graph.pipeline import listing_graph, review_graph
 
 router = APIRouter(prefix="/api/moderate", tags=["moderation"])
+
+# Day 9: all four moderation-triggering endpoints below (listing/review,
+# streaming/non-streaming) share ONE "moderate" rate-limit bucket per
+# client IP — 5 requests/minute total across all of them, not 5 each.
+# This deliberately mirrors reality: all four ultimately draw from the
+# same shared Gemini free-tier quota, so the limit protects that shared
+# resource rather than giving each endpoint its own independent budget
+# that could still add up to blowing through the real quota. The limit
+# itself (5/min) matches the actual free-tier ceiling observed in
+# production error messages during Day 4 testing, not a guess.
 
 # Maps the Aggregator's decision straight onto content status.
 _DECISION_TO_STATUS = {
@@ -64,7 +75,11 @@ def _persist_verdict(db: Session, item_id: UUID, item_type: str, result: Aggrega
     return verdict
 
 
-@router.post("/listing/{listing_id}", response_model=AggregatorVerdict)
+@router.post(
+    "/listing/{listing_id}",
+    response_model=AggregatorVerdict,
+    dependencies=[Depends(rate_limiter("moderate", limit=5, window_seconds=60))],
+)
 def moderate_listing(
     listing_id: UUID,
     db: Session = Depends(get_db),
@@ -116,7 +131,11 @@ def moderate_listing(
     return result
 
 
-@router.post("/review/{review_id}", response_model=AggregatorVerdict)
+@router.post(
+    "/review/{review_id}",
+    response_model=AggregatorVerdict,
+    dependencies=[Depends(rate_limiter("moderate", limit=5, window_seconds=60))],
+)
 def moderate_review(
     review_id: UUID,
     db: Session = Depends(get_db),
@@ -203,7 +222,10 @@ def _stream_pipeline(db: Session, graph, initial_state: dict, item_id: UUID, ite
     yield _sse_event("done", {})
 
 
-@router.get("/stream/listing/{listing_id}")
+@router.get(
+    "/stream/listing/{listing_id}",
+    dependencies=[Depends(rate_limiter("moderate", limit=5, window_seconds=60))],
+)
 def stream_moderate_listing(
     listing_id: UUID,
     db: Session = Depends(get_db),
@@ -236,7 +258,10 @@ def stream_moderate_listing(
     )
 
 
-@router.get("/stream/review/{review_id}")
+@router.get(
+    "/stream/review/{review_id}",
+    dependencies=[Depends(rate_limiter("moderate", limit=5, window_seconds=60))],
+)
 def stream_moderate_review(
     review_id: UUID,
     db: Session = Depends(get_db),

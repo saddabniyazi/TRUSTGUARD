@@ -1,4 +1,4 @@
-# TrustGuard AI — Day 1 through Day 8
+# TrustGuard AI — Day 1 through Day 9
 
 Autonomous Multi-Agent Marketplace Moderation Copilot.
 
@@ -375,6 +375,83 @@ Rebuilt and re-verified the frontend (`npm run build`, zero errors,
 all 7 routes including the new dynamic `/sellers/[id]` route) after
 adding the seller page and the QueueRow link.
 
+### Day 9 — Real Evaluation Harness, Rate Limiting, Caching
+
+Redis has sat in `docker-compose.yml` unused since Day 1. It finally
+earns its place here.
+
+- **`app/core/redis_client.py`**: one shared connection, used by both
+  pieces below.
+- **`app/core/cache.py`**: caches every agent's response, keyed by a
+  hash of the agent name + system instruction + exact prompt —
+  **content-addressed, not item-ID-addressed**. Caching by
+  `listing_id` would silently serve a stale verdict after the listing
+  was edited or a policy rule changed; keying on the actual inputs
+  means a cache hit is only ever returned for the exact inputs it was
+  computed from. 1-hour TTL. **Fails open**: any Redis error is
+  logged and treated as a cache miss, never as a reason to fail the
+  request — caching is a cost optimization, not a correctness
+  requirement.
+- **`app/core/rate_limit.py`**: fixed-window rate limiting via a
+  single Redis `INCR`, applied as a FastAPI dependency. `/api/moderate/*`
+  is capped at **5 requests/minute** — deliberately matching the exact
+  free-tier quota this project hit and documented back in the Day 4
+  fix note, so the app protects its own quota instead of relying on
+  the user to pace themselves manually. Ingestion endpoints
+  (`/api/listings`, `/api/reviews`) get a looser 20/minute, mostly as
+  basic spam protection. **Also fails open** on a Redis error, for the
+  same reason as the cache — a rate limiter's backing store being down
+  shouldn't take the whole API down with it.
+- **`app/eval/harness.py`**: the real evaluation harness, replacing
+  Day 4's fraud-only pass/fail script. Runs the **entire pipeline** —
+  guardrail + Policy + Toxicity + Fraud + Aggregator, exactly as a real
+  request would — against all 36 adversarial cases, and reports
+  **precision/recall/F1**, not just a percentage correct.
+  - **Escalated cases are excluded from accuracy, not counted as
+    either right or wrong.** The system has three outputs
+    (approve/reject/escalate) against binary ground-truth labels;
+    escalation is a deliberate "I'm not sure" that would distort the
+    metric if folded into either side. This is the standard, honest
+    way to score a classifier with an abstain option.
+  - `python -m app.eval.run_full_eval` runs it for real (36 cases × 3
+    agent calls ≈ 108 requests, paced at 45s between cases for the
+    free tier's tightest observed quota — expect ~25-30 minutes for a
+    full run) and **persists the result** as an `EvalRun` row, so a
+    trend can be tracked across runs instead of losing the number the
+    moment the script's stdout scrolls away.
+- **`GET /api/eval/agreement`**: a second, live metric — of every
+  `ModeratorFeedback` entry submitted (Day 6), how often did the
+  human's decision match the Aggregator's? This is the **production
+  analogue** of the offline harness: the harness measures the system
+  against hand-labeled synthetic cases *before* you trust it; this
+  measures it against real human judgment *after* deployment. Both are
+  reported on the dashboard because they answer different questions.
+- **`GET /api/eval/runs`** / **`GET /api/eval/runs/latest`**: history
+  of harness runs.
+- **Metrics page** now shows both: live moderator-agreement rate
+  (overall + broken down by decision type) and the latest offline
+  harness run's precision/recall/F1/per-category breakdown, with a
+  visible note ("no eval run recorded yet") when nobody's run the
+  script — an honest empty state instead of a fake zero.
+
+**What I actually verified**: the cache and rate limiter's core logic
+against a fake in-memory Redis (cache hits/misses correctly
+content-addressed and namespaced by agent; rate limiter enforces the
+exact limit, returns 429 with a correct `Retry-After` header on the
+request over the limit); **both fail open correctly on a real
+`RedisError`**, verified two ways — as an isolated unit test, and as a
+full end-to-end request through `/api/moderate/listing/{id}` with
+Redis completely unreachable, confirming the whole moderation flow
+still completes successfully rather than erroring out. I also verified
+the harness's precision/recall/F1/accuracy math directly: built a
+5-case synthetic dataset with hand-picked right/wrong/escalated
+outcomes, mocked the agents to produce a known TP/FP/FN/TN/escalation
+mix, and confirmed every computed metric matched the value I worked
+out by hand. What I have **not** done: an actual full run against
+Gemini (that's a 25-30 minute, real-quota-costing operation — run
+`python -m app.eval.run_full_eval` yourself and tell me the numbers,
+especially if any category's accuracy looks off).
+
 ## How to run it
 
 1. Copy `.env.example` to `.env` and fill in the values (a random
@@ -483,7 +560,24 @@ adding the seller page and the QueueRow link.
    Queue page, expand any item and click **Moderate** to watch the
    live signal meters populate as each agent finishes, then click
    **View seller →** on a listing row to see that seller's full trust
-   audit trail.
+   audit trail. The Metrics page now shows the live moderator-
+   agreement rate and (once you've run step 8 below) the offline
+   harness's precision/recall.
+
+8. **Run the full evaluation harness** (optional, costs real Gemini
+   quota, takes ~25-30 minutes at the free tier's pace):
+
+   ```bash
+   cd backend
+   python -m app.eval.run_full_eval
+   ```
+
+   Prints a live progress line per case, then a precision/recall/F1
+   report, then persists it — refresh the Metrics page afterward to
+   see it there. Redis (already running via `docker compose up -d`
+   from step 2) is what makes repeat cases in the dataset fast on a
+   second run — the response cache means identical prompts don't
+   re-spend quota.
 
 ## Folder structure
 
@@ -496,11 +590,14 @@ trustguard/
 │   │   │   ├── config.py      # env-driven settings
 │   │   │   ├── security.py    # password hashing, JWT create/verify
 │   │   │   ├── seed_data.py   # 22 structured policy rules
-│   │   │   └── llm_client.py  # Gemini wrapper: structured output + retry logic
+│   │   │   ├── llm_client.py  # Gemini wrapper: structured output + retry logic + cache lookup
+│   │   │   ├── redis_client.py # Day 9: shared Redis connection
+│   │   │   ├── cache.py       # Day 9: content-addressed agent response cache
+│   │   │   └── rate_limit.py  # Day 9: fixed-window rate limiter, fails open
 │   │   ├── db/
 │   │   │   ├── base.py
 │   │   │   ├── session.py
-│   │   │   └── models.py      # users, sellers, listings, reviews, policy_rules, verdicts, moderator_feedback
+│   │   │   └── models.py      # users, sellers, listings, reviews, policy_rules, verdicts, moderator_feedback, eval_runs
 │   │   ├── guardrails/
 │   │   │   └── sanitizer.py   # leetspeak normalization + prompt-injection detection
 │   │   ├── agents/
@@ -519,21 +616,25 @@ trustguard/
 │   │   │   └── pipeline.py    # compiled listing_graph and review_graph
 │   │   ├── eval/
 │   │   │   ├── adversarial_dataset.py # 36 labeled test cases across 9 categories
-│   │   │   └── run_fraud_eval.py      # runnable pass/fail check against the dataset
+│   │   │   ├── run_fraud_eval.py      # Day 4: fraud-agent-only pass/fail check
+│   │   │   ├── harness.py             # Day 9: full-pipeline precision/recall/F1 harness
+│   │   │   └── run_full_eval.py       # Day 9: CLI runner, persists an EvalRun
 │   │   ├── schemas/
 │   │   │   ├── auth.py
 │   │   │   ├── content.py     # seller/listing/review schemas
 │   │   │   ├── policy.py      # policy rule schemas
-│   │   │   └── feedback.py    # moderator feedback schemas
+│   │   │   ├── feedback.py    # moderator feedback schemas
+│   │   │   └── eval.py        # Day 9: agreement summary + EvalRun response schemas
 │   │   └── api/
 │   │       ├── auth.py
 │   │       ├── sellers.py     # includes /api/sellers/{id}/audit — Day 8 audit trail
-│   │       ├── listings.py
-│   │       ├── reviews.py
+│   │       ├── listings.py    # rate-limited (Day 9)
+│   │       ├── reviews.py     # rate-limited (Day 9)
 │   │       ├── rules.py
 │   │       ├── agents.py      # /api/agents/evaluate/{listing,review}/{id} — inspect individual agents
-│   │       ├── moderation.py  # /api/moderate/* — the real decision (graph-based, trust-adjusted), persisted Verdict, SSE streaming
-│   │       └── feedback.py    # /api/feedback — moderator overrides feeding Day 9's eval dataset
+│   │       ├── moderation.py  # /api/moderate/* — the real decision (graph-based, trust-adjusted, rate-limited), SSE streaming
+│   │       ├── feedback.py    # /api/feedback — moderator overrides feeding Day 9's eval dataset
+│   │       └── eval.py        # Day 9: /api/eval/agreement, /api/eval/runs
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── .env.example
@@ -641,12 +742,12 @@ trustguard/
   concurrent ones, which is the actual mechanism, not just "LangGraph
   makes it faster."
 
-## Next (Day 9)
+## Next (Day 10)
 
-The real evaluation harness — LLM-as-judge scoring, precision/recall
-against the 36-case adversarial dataset (Day 4) plus accumulated
-moderator feedback (Day 6), and persisted results over time instead of
-a one-off pass/fail script. Also: rate limiting and caching polish,
-since free-tier quota is still the single biggest operational risk in
-this project.
+Deployment — backend to Render/Railway, frontend to Vercel, both on
+free tiers. Also: a final pass on the README as a standalone
+deliverable (right now it's written as a running log across 9 drops;
+Day 10 is where it gets tightened into what a recruiter or interviewer
+would actually read first), and whatever polish falls out of actually
+running the full eval harness for the first time.
 

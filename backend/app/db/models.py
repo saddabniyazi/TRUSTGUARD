@@ -151,6 +151,36 @@ class Verdict(Base):
     feedback_entries: Mapped[list["ModeratorFeedback"]] = relationship(back_populates="verdict")
 
 
+class EvalRun(Base):
+    """
+    A persisted result from running the full-pipeline adversarial-
+    dataset harness (app/eval/harness.py) — the offline, "before you
+    trust this in a demo" complement to the live moderator-agreement
+    metric (app/api/eval.py's /agreement, computed fresh from
+    ModeratorFeedback). Persisted because each run costs real Gemini
+    quota; results shouldn't vanish the moment the script's stdout
+    scrolls past, and a dashboard should be able to show a trend
+    across runs, not just the most recent number.
+    """
+
+    __tablename__ = "eval_runs"
+
+    id: Mapped[uuid.UUID] = _uuid_col()
+    total_cases: Mapped[int] = mapped_column(Integer, nullable=False)
+    escalated_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    true_positives: Mapped[int] = mapped_column(Integer, nullable=False)
+    false_positives: Mapped[int] = mapped_column(Integer, nullable=False)
+    false_negatives: Mapped[int] = mapped_column(Integer, nullable=False)
+    true_negatives: Mapped[int] = mapped_column(Integer, nullable=False)
+    precision: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    recall: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    f1: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    accuracy_on_decided: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    per_category_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ModeratorFeedback(Base):
     """Human override/confirmation of a verdict — feeds the evaluation dataset later."""
 

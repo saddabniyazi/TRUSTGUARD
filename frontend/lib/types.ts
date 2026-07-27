@@ -134,3 +134,41 @@ export interface StreamEvent {
   agent: "policy" | "toxicity" | "fraud" | "aggregator" | "done" | "error";
   data: Record<string, unknown>;
 }
+
+export interface AgreementBreakdown {
+  decision: string;
+  total_feedback: number;
+  agreements: number;
+  agreement_rate: number | null;
+}
+
+export interface AgreementSummary {
+  total_feedback_entries: number;
+  overall_agreement_rate: number | null;
+  by_decision: AgreementBreakdown[];
+}
+
+export interface EvalRunCategoryStats {
+  total: number;
+  escalated: number;
+  errors: number;
+  correct: number;
+  scored: number;
+}
+
+export interface EvalRun {
+  id: string;
+  total_cases: number;
+  escalated_count: number;
+  error_count: number;
+  true_positives: number;
+  false_positives: number;
+  false_negatives: number;
+  true_negatives: number;
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
+  accuracy_on_decided: number | null;
+  per_category: Record<string, EvalRunCategoryStats>;
+  created_at: string;
+}

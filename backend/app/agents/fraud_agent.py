@@ -57,4 +57,5 @@ Evaluate this review for signs of being fake or incentivized, and return your ve
         prompt=prompt,
         response_schema=FraudAgentVerdict,
         system_instruction=_SYSTEM_INSTRUCTION,
+        agent_name="fraud",
     )

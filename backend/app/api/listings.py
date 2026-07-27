@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
+from app.core.rate_limit import rate_limiter
 from app.db.models import Listing, Seller, User
 from app.db.session import get_db
 from app.guardrails.sanitizer import run_guardrail
@@ -12,13 +13,20 @@ from app.schemas.content import GuardrailInfo, ListingCreate, ListingOut
 router = APIRouter(prefix="/api/listings", tags=["listings"])
 
 
-@router.post("", response_model=ListingOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ListingOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limiter("listings_submit", limit=20, window_seconds=60))],
+)
 def submit_listing(payload: ListingCreate, db: Session = Depends(get_db)) -> ListingOut:
     """
     Ingests a new listing. Left unauthenticated deliberately: in the real
     architecture, this is called by the marketplace's own backend on
-    behalf of a seller (not by the seller directly) — API-key auth for
-    that server-to-server call lands on Day 9 alongside rate limiting.
+    behalf of a seller (not by the seller directly) — a scoped API key
+    for that server-to-server call is a reasonable future step, but
+    Day 9 covers the more urgent gap: IP-based rate limiting (20/min),
+    since this endpoint has no auth to key a limit on otherwise.
 
     Runs the guardrail pre-filter on title + description BEFORE any of
     it would ever reach an LLM agent (Day 3+). This endpoint does NOT

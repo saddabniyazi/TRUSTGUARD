@@ -63,4 +63,5 @@ Evaluate the content against the rules above and return your verdict."""
         prompt=prompt,
         response_schema=PolicyAgentVerdict,
         system_instruction=_SYSTEM_INSTRUCTION,
+        agent_name="policy",
     )

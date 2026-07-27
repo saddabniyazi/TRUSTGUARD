@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
+from app.core.rate_limit import rate_limiter
 from app.db.models import Listing, Review, User
 from app.db.session import get_db
 from app.guardrails.sanitizer import run_guardrail
@@ -12,7 +13,12 @@ from app.schemas.content import GuardrailInfo, ReviewCreate, ReviewOut
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
 
-@router.post("", response_model=ReviewOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ReviewOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limiter("reviews_submit", limit=20, window_seconds=60))],
+)
 def submit_review(payload: ReviewCreate, db: Session = Depends(get_db)) -> ReviewOut:
     product = db.get(Listing, payload.product_id)
     if product is None:

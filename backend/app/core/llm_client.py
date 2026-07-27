@@ -21,6 +21,7 @@ from google.genai import errors as genai_errors
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
+from app.core.cache import get_cached, set_cached
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ def generate_structured(
     system_instruction: str | None = None,
     temperature: float = 0.1,
     max_retries: int = 3,
+    agent_name: str = "unnamed_agent",
 ) -> T:
     """
     Calls Gemini and validates the response against response_schema.
@@ -64,7 +66,21 @@ def generate_structured(
     Does NOT retry on 4xx errors that indicate a bad request (e.g. 400,
     404) — those won't succeed on retry and would just burn free-tier
     quota.
+
+    Checks the Redis cache (app/core/cache.py) before calling Gemini at
+    all, keyed on agent_name + the exact prompt + system_instruction —
+    see that module for why content-addressed caching is correct here
+    in a way that caching by item ID wouldn't be. A cache hit skips the
+    network call entirely; a miss calls Gemini as before and stores the
+    result before returning it. Caching is best-effort: any cache
+    read/write failure is swallowed by app/core/cache.py itself and
+    treated as a miss, never as a reason to fail the request.
     """
+    cache_key_parts = (prompt,)
+    cached = get_cached(agent_name, response_schema, system_instruction or "", *cache_key_parts)
+    if cached is not None:
+        return cached
+
     client = get_client()
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
@@ -86,7 +102,9 @@ def generate_structured(
                 raise AgentCallError("Gemini returned an empty response (no text content).")
 
             parsed_json = json.loads(raw_text)
-            return response_schema.model_validate(parsed_json)
+            result = response_schema.model_validate(parsed_json)
+            set_cached(agent_name, result, system_instruction or "", *cache_key_parts)
+            return result
 
         except genai_errors.APIError as exc:
             last_error = exc
